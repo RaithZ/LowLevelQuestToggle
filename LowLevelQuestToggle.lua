@@ -47,8 +47,6 @@ local function UpdateButtonAppearance()
     end
 end
 
--- ── tracking frame refresh ────────────────────────────────────────────────────
-
 local function GetTrackingFrame()
     if MinimapCluster then
         return MinimapCluster.Tracking or MinimapCluster.TrackingFrame
@@ -56,22 +54,50 @@ local function GetTrackingFrame()
     return _G["MiniMapTrackingFrame"] or _G["MiniMapTracking"]
 end
 
-local function RefreshTrackingFrame()
-    local tf = GetTrackingFrame()
-    if not tf then return end
+-- ── minimap menu hook ────────────────────────────────────────────────────────
+-- Ensures the low-level quest checkbox in the minimap tracking menu always
+-- reflects live state, even after our button changes it externally.
 
-    -- Fire OnEvent on the frame and its Button child
-    local fn = tf:GetScript("OnEvent")
-    if fn then pcall(fn, tf, "MINIMAP_UPDATE_TRACKING") end
-
-    if tf.Button and tf.Button.GetScript then
-        local fn2 = tf.Button:GetScript("OnEvent")
-        if fn2 then pcall(fn2, tf.Button, "MINIMAP_UPDATE_TRACKING") end
+local function HookMinimapTrackingMenu()
+    local tf = MinimapCluster and (MinimapCluster.Tracking or MinimapCluster.TrackingFrame)
+              or _G["MiniMapTrackingFrame"] or _G["MiniMapTracking"]
+    if not tf or not tf.Button then
+        C_Timer.After(2, HookMinimapTrackingMenu)
+        return
     end
 
-    -- Hide/show the tracking frame to force the Button to rebuild its menu on next click
-    tf:Hide()
-    tf:Show()
+    local btn = tf.Button
+    if not btn.menuGenerator then return end
+
+    local origGenerator = btn.menuGenerator
+    btn.menuGenerator = function(self, rootDescription, contextData)
+        local origCreateCheckbox = rootDescription.CreateCheckbox
+        if not origCreateCheckbox then
+            return origGenerator(self, rootDescription, contextData)
+        end
+
+        -- Find the low-level quest tracking index once per menu open
+        local llqIdx = FindLowLevelQuestTrackingIndex()
+
+        rootDescription.CreateCheckbox = function(rdSelf, label, isSelectedFn, setSelectedFn, ...)
+            -- Only override isSelectedFn for the low-level quest item
+            if llqIdx then
+                local info = C_Minimap.GetTrackingInfo(llqIdx)
+                if info and info.name == label then
+                    local idx = llqIdx
+                    isSelectedFn = function()
+                        local liveInfo = C_Minimap.GetTrackingInfo(idx)
+                        return liveInfo and liveInfo.active == true
+                    end
+                end
+            end
+            return origCreateCheckbox(rdSelf, label, isSelectedFn, setSelectedFn, ...)
+        end
+
+        local result = origGenerator(self, rootDescription, contextData)
+        rawset(rootDescription, "CreateCheckbox", nil)
+        return result
+    end
 end
 
 -- ── apply tracking ────────────────────────────────────────────────────────────
@@ -89,48 +115,6 @@ local function ApplyQuestTracking()
     local info = C_Minimap.GetTrackingInfo(idx)
     if info then
         LowLevelQuestToggle_ShowLowLevel = info.active == true
-    end
-
-    RefreshTrackingFrame()
-end
-
--- Hook the minimap tracking menu to always reflect live state
-local function HookMinimapTrackingMenu()
-    local tf = GetTrackingFrame()
-    if not tf or not tf.Button then
-        C_Timer.After(2, HookMinimapTrackingMenu)
-        return
-    end
-
-    local btn = tf.Button
-    if not btn.menuGenerator then return end
-
-    local origGenerator = btn.menuGenerator
-    btn.menuGenerator = function(self, rootDescription, contextData)
-        local origCreateCheckbox = rawget(rootDescription, "CreateCheckbox")
-        if not origCreateCheckbox then
-            return origGenerator(self, rootDescription, contextData)
-        end
-
-        rootDescription.CreateCheckbox = function(rdSelf, label, isSelectedFn, setSelectedFn, ...)
-            local count = C_Minimap.GetNumTrackingTypes()
-            for i = 1, count do
-                local info = C_Minimap.GetTrackingInfo(i)
-                if info and info.name == label then
-                    local idx = i
-                    isSelectedFn = function()
-                        local liveInfo = C_Minimap.GetTrackingInfo(idx)
-                        return liveInfo and liveInfo.active == true
-                    end
-                    break
-                end
-            end
-            return origCreateCheckbox(rdSelf, label, isSelectedFn, setSelectedFn, ...)
-        end
-
-        local result = origGenerator(self, rootDescription, contextData)
-        rootDescription.CreateCheckbox = origCreateCheckbox
-        return result
     end
 end
 
