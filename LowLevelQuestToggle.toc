@@ -2,7 +2,7 @@
 ## Title: |cFFFFD700Low Level Quest Toggle|r
 ## Notes: Adds a button to toggle showing low-level quests.
 ## Author: RaithZ
-## Version: 1.0.4
+## Version: 1.0.5
 ## SavedVariables: LowLevelQuestToggle_ShowLowLevel LowLevelQuestToggle_Position LowLevelQuestToggle_Visible
 
 LowLevelQuestToggle.lua
